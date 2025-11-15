@@ -27,7 +27,7 @@ or  python capture.py -i "\\Device\\NPF_{YOUR_INTERFACE_ID}" --filter "tcp port 
 
 TO STOP CAPTURE: CTRL C
 
-Examples:
+4.Examples
 
 ping traffic:
 ping google.com
