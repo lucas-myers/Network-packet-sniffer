@@ -1,144 +1,146 @@
 #!/usr/bin/env python3
 """
-Projects: Network Packet Sniffer
-Authors: Lucas Myers, Purvendra Bhatt, Jonathan Campbell
-Course:CS4730
+Milestone 2 Packet Sniffer
+Lucas Myers, Purvendra, Jon
 """
 
+# i just imported everything
 from scapy.all import sniff, Ether, IP, IPv6, TCP, UDP, Raw
+
 import time
 import threading
 from collections import Counter, defaultdict
 import argparse
 
-#Counts the stats globablly
+# global variables
 PACKETS = 0
 BYTES = 0
 TOP_TALKERS = Counter()
-
-# Store TCP streams for reassembly
 TCP_STREAMS = defaultdict(list)
 
 
-def parse_packet(pkt):
-    """Parse and display packet headers, collect stats and TCP data."""
+
+def parse_packet(packet):
+    """ Everytime there is a packet this will run """
     global PACKETS, BYTES, TOP_TALKERS
+
     PACKETS += 1
-    BYTES += len(pkt)
+    BYTES += len(packet)
+
     timestamp = time.strftime("%H:%M:%S", time.localtime())
 
-    src_ip = dst_ip = "-"
-    src_port = dst_port = "-"
-    proto_name = "-"
+    # default 
+    src_ip = "-"
+    dst_ip = "-"
+    src_port = "-"
+    dst_port = "-"
+    proto = "-"
     flags = ""
 
-    # Layer 2: Ethernet
-    if Ether in pkt:
-        eth = pkt[Ether]
+    # ethernet 
+    if Ether in packet:
+        eth = packet[Ether]
 
-    # Layer 3: IPv4 or IPv6
-    if IP in pkt:
-        ip = pkt[IP]
-        src_ip, dst_ip = ip.src, ip.dst
-    elif IPv6 in pkt:
-        ip = pkt[IPv6]
-        src_ip, dst_ip = ip.src, ip.dst
+    # try ipv4 then ipv6
+    if IP in packet:
+        ip = packet[IP]
+        src_ip = ip.src
+        dst_ip = ip.dst
+    elif IPv6 in packet:
+        ip = packet[IPv6]
+        src_ip = ip.src
+        dst_ip = ip.dst
 
-    # Layer 4: TCP or UDP
-    if TCP in pkt:
-        tcp = pkt[TCP]
-        src_port, dst_port = tcp.sport, tcp.dport
-        proto_name = "TCP"
+    # tcp or udp 
+    if TCP in packet:
+        tcp = packet[TCP]
+        src_port = tcp.sport
+        dst_port = tcp.dport
+        proto = "TCP"
         flags = str(tcp.flags)
-        handle_tcp_reassembly(pkt, src_ip, dst_ip, src_port, dst_port, tcp)
-    elif UDP in pkt:
-        udp = pkt[UDP]
-        src_port, dst_port = udp.sport, udp.dport
-        proto_name = "UDP"
-        handle_udp_detection(pkt, src_ip, dst_ip, src_port, dst_port)
+        handle_tcp_reassembly(packet, src_ip, dst_ip, src_port, dst_port, tcp)
+    elif UDP in packet:
+        udp = packet[UDP]
+        src_port = udp.sport
+        dst_port = udp.dport
+        proto = "UDP"
+        handle_udp_detection(packet, src_ip, dst_ip, src_port, dst_port)
     else:
-        proto_name = "Other"
+        proto = "Other???"
 
-    # Count top talkers
     TOP_TALKERS[src_ip] += 1
 
-    # Print summary line
-    print(f"[{timestamp}] {src_ip}:{src_port} -> {dst_ip}:{dst_port} {proto_name} len={len(pkt)} flags={flags}")
+    # prints everything on one line 
+    print(f"[{timestamp}] {src_ip}:{src_port} -> {dst_ip}:{dst_port} {proto} len={len(packet)} flags={flags}")
 
 
-def handle_tcp_reassembly(pkt, src_ip, dst_ip, sport, dport, tcp):
-    """Collect TCP payloads by stream key and try to reassemble HTTP."""
+
+def handle_tcp_reassembly(packet, src_ip, dst_ip, sport, dport, tcp):
+    """ tries to rebuild http  """
     key = tuple(sorted([(src_ip, sport), (dst_ip, dport)]))
-    if Raw in pkt:
-        payload = pkt[Raw].load
-        TCP_STREAMS[key].append(payload)
-        # Try simple HTTP detection
-        if b"HTTP/" in payload or payload.startswith(b"GET") or payload.startswith(b"POST"):
-            data = b"".join(TCP_STREAMS[key])
+
+    if Raw in packet:
+        p = packet[Raw].load
+        TCP_STREAMS[key].append(p)
+
+        if b"HTTP/" in p or p.startswith(b"GET") or p.startswith(b"POST"):
             try:
-                text = data.decode(errors="ignore")
-                if "Host:" in text or "HTTP/" in text:
-                    print("\n=== HTTP Stream Detected ===")
-                    print(text.split("\r\n\r\n")[0])  # print headers only
-                    print("===========================\n")
-            except Exception:
+                blob = b"".join(TCP_STREAMS[key]).decode(errors="ignore")
+                if "Host:" in blob:
+                    print("\n=== HTTP Stream (kinda) ===")
+                    print(blob.split("\r\n\r\n")[0])
+                    print("=== end ===\n")
+            except:
                 pass
 
 
-def handle_udp_detection(pkt, src_ip, dst_ip, sport, dport):
-    """Check for encrypted UDP traffic like QUIC."""
-    length = len(pkt)
-    if dport == 443 or sport == 443:
-        print(f"[!] Possible QUIC traffic detected between {src_ip} and {dst_ip} (UDP/443, {length} bytes)")
 
+def handle_udp_detection(packet, src_ip, dst_ip, sport, dport):
+    """ Will check to see if it is Quic or on port 443 """
+    if sport == 443 or dport == 443:
+        print(f"[!] might be QUIC or encrypted between {src_ip} and {dst_ip}")
 
-def detect_encrypted_traffic(pkt):
-    """Detect HTTPS by port and TLS handshake bytes."""
-    if TCP in pkt:
-        t = pkt[TCP]
-        if t.dport == 443 or t.sport == 443:
-            if Raw in pkt and pkt[Raw].load.startswith(b"\x16\x03"):
-                print(f"[!] TLS Handshake detected on {pkt[IP].src}:{t.sport} -> {pkt[IP].dst}:{t.dport}")
 
 
 def stats_loop():
-    """Print live stats every few seconds."""
-    last_packets = 0
-    last_bytes = 0
+    """  Will loop and print the stats every 3 seconds while the program is runing """
+    lastp = 0
+    lastb = 0
     while True:
         time.sleep(3)
-        pps = PACKETS - last_packets
-        bps = BYTES - last_bytes
-        last_packets, last_bytes = PACKETS, BYTES
-        print(f"\n[Stats] Packets={PACKETS}  Bytes={BYTES}  Rate={pps/3:.1f} pkts/s  {bps/3:.1f} B/s")
+        pps = PACKETS - lastp
+        bps = BYTES - lastb
+        lastp, lastb = PACKETS, BYTES
+
+        print(f"\n[Stats] packets={PACKETS} bytes={BYTES} rate={pps/3:.2f}pps {bps/3:.2f}Bps")
         if TOP_TALKERS:
-            top = TOP_TALKERS.most_common(3)
-            print(f"Top talkers: {top}\n")
+            print("top talkers:", TOP_TALKERS.most_common(3), "\n")
+
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Milestone 2 Packet Sniffer")
-    parser.add_argument("-i", "--iface", required=True, help="Interface to capture packets on (e.g. eth0, lo)")
-    parser.add_argument("--filter", help="Optional BPF filter (e.g. 'tcp port 80')")
+    parser = argparse.ArgumentParser(description="Milestone2 Sniffer")
+    parser.add_argument("-i", "--iface", required=True, help="interface(eth0, wifi)")
+    parser.add_argument("--filter", help="BPF filter if u wanna look fancy")
     args = parser.parse_args()
 
-    print("Starting Packet Capture...")
-    print(f"Interface: {args.iface}")
+    print("Starting capture on", args.iface)
     if args.filter:
-        print(f"Filter: {args.filter}")
-    print("Press Ctrl+C to stop.\n")
+        print("Using filter:", args.filter)
+    print("Ctrl+C to stop it (please don't unplug your pc)\n")
 
-    # Start stats thread
+    # stats thread
     threading.Thread(target=stats_loop, daemon=True).start()
 
     try:
         sniff(iface=args.iface, filter=args.filter, prn=parse_packet, store=False)
     except KeyboardInterrupt:
-        print("\nCapture stopped.")
-        print(f"Total Packets: {PACKETS}")
-        print(f"Total Bytes: {BYTES}")
-        print(f"Top talkers: {TOP_TALKERS.most_common(5)}")
-        print("Goodbye!")
+        print("\nOkay stopping now")
+        print("Total packets:", PACKETS)
+        print("Total bytes:", BYTES)
+        print("Top talkers:", TOP_TALKERS.most_common(5))
+        print("bye.")
+
 
 
 if __name__ == "__main__":
