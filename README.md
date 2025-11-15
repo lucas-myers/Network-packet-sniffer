@@ -31,6 +31,8 @@ TO STOP CAPTURE: CTRL C
 
 ping traffic:
 ping google.com
+ICMP Echo Request
+ICMP Echo Reply
 
 HTTP traffic:
 curl http://example.com
