@@ -29,7 +29,7 @@ def parse_packet(packet):
 
     timestamp = time.strftime("%H:%M:%S", time.localtime())
 
-    # default 
+    # default stuff so it doesnt explode
     src_ip = "-"
     dst_ip = "-"
     src_port = "-"
@@ -87,9 +87,9 @@ def handle_tcp_reassembly(packet, src_ip, dst_ip, sport, dport, tcp):
             try:
                 blob = b"".join(TCP_STREAMS[key]).decode(errors="ignore")
                 if "Host:" in blob:
-                    print("\n=== HTTP Stream (kinda) ===")
+                    print("\n-HTTP Stream-m ")
                     print(blob.split("\r\n\r\n")[0])
-                    print("=== end ===\n")
+                    print("-end-\n")
             except:
                 pass
 
@@ -145,4 +145,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
