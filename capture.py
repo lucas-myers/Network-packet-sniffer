@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
 Milestone 2 Packet Sniffer
-Lucas Myers, Purvendra, Jon
+Lucas Myers, Purvendra Bhatt, Jon Campbell
 """
 
 # i just imported everything
-from scapy.all import sniff, Ether, IP, IPv6, TCP, UDP, Raw
+from scapy.all import sniff, Ether, IP, IPv6, TCP, UDP, ICMP, DNS, Raw
 
 import time
 import threading
@@ -29,7 +29,7 @@ def parse_packet(packet):
 
     timestamp = time.strftime("%H:%M:%S", time.localtime())
 
-    # default stuff so it doesnt explode
+    # default 
     src_ip = "-"
     dst_ip = "-"
     src_port = "-"
@@ -51,20 +51,40 @@ def parse_packet(packet):
         src_ip = ip.src
         dst_ip = ip.dst
 
-    # tcp or udp 
+    # tcp or udp or icmp
     if TCP in packet:
         tcp = packet[TCP]
         src_port = tcp.sport
         dst_port = tcp.dport
-        proto = "TCP"
         flags = str(tcp.flags)
+
+        # detect HTTP
+        if Raw in packet and (packet[Raw].load.startswith(b"GET") or 
+                              packet[Raw].load.startswith(b"POST") or
+                              b"HTTP/" in packet[Raw].load):
+            proto = "HTTP"
+        else:
+            proto = "TCP"
+
         handle_tcp_reassembly(packet, src_ip, dst_ip, src_port, dst_port, tcp)
+
     elif UDP in packet:
         udp = packet[UDP]
         src_port = udp.sport
         dst_port = udp.dport
         proto = "UDP"
-        handle_udp_detection(packet, src_ip, dst_ip, src_port, dst_port)
+
+        # detect DNS
+        if (src_port == 53 or dst_port == 53) and DNS in packet:
+            proto = "DNS"
+            handle_dns(packet, src_ip, dst_ip, src_port, dst_port)
+        else:
+            handle_udp_detection(packet, src_ip, dst_ip, src_port, dst_port)
+
+    elif ICMP in packet:
+        proto = "ICMP"
+        handle_icmp(packet, src_ip, dst_ip)
+
     else:
         proto = "Other???"
 
@@ -72,7 +92,6 @@ def parse_packet(packet):
 
     # prints everything on one line 
     print(f"[{timestamp}] {src_ip}:{src_port} -> {dst_ip}:{dst_port} {proto} len={len(packet)} flags={flags}")
-
 
 
 def handle_tcp_reassembly(packet, src_ip, dst_ip, sport, dport, tcp):
@@ -87,12 +106,11 @@ def handle_tcp_reassembly(packet, src_ip, dst_ip, sport, dport, tcp):
             try:
                 blob = b"".join(TCP_STREAMS[key]).decode(errors="ignore")
                 if "Host:" in blob:
-                    print("\n-HTTP Stream-m ")
+                    print("\n-HTTP Stream-")
                     print(blob.split("\r\n\r\n")[0])
                     print("-end-\n")
             except:
                 pass
-
 
 
 def handle_udp_detection(packet, src_ip, dst_ip, sport, dport):
@@ -100,6 +118,20 @@ def handle_udp_detection(packet, src_ip, dst_ip, sport, dport):
     if sport == 443 or dport == 443:
         print(f"[!] might be QUIC or encrypted between {src_ip} and {dst_ip}")
 
+
+def handle_dns(packet, src_ip, dst_ip, sport, dport):
+    """ Simple DNS printing """
+    try:
+        dns = packet[DNS]
+        print(f"[!] DNS packet: {src_ip}:{sport} -> {dst_ip}:{dport} qname={dns.qd.qname.decode()}")
+    except:
+        pass
+
+
+def handle_icmp(packet, src_ip, dst_ip):
+    """ Simple ICMP printing """
+    icmp = packet[ICMP]
+    print(f"[!] ICMP packet: {src_ip} -> {dst_ip} type={icmp.type} code={icmp.code}")
 
 
 def stats_loop():
@@ -115,7 +147,6 @@ def stats_loop():
         print(f"\n[Stats] packets={PACKETS} bytes={BYTES} rate={pps/3:.2f}pps {bps/3:.2f}Bps")
         if TOP_TALKERS:
             print("top talkers:", TOP_TALKERS.most_common(3), "\n")
-
 
 
 def main():
@@ -140,7 +171,6 @@ def main():
         print("Total bytes:", BYTES)
         print("Top talkers:", TOP_TALKERS.most_common(5))
         print("bye.")
-
 
 
 if __name__ == "__main__":
