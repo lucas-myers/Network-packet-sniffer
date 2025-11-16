@@ -43,6 +43,6 @@ nslookup google.com
 port 53
 
 apply filters:
-sudo python3 capture.py -i ens33 -f "udp port 53"
-sudo python3 capture.py -i ens33 -f "tcp"
-sudo python3 capture.py -i ens33 -f "icmp"
+sudo python3 capture.py -i ens33 --filter "udp port 53"
+sudo python3 capture.py -i ens33 --filter "tcp"
+sudo python3 capture.py -i ens33 --filter "icmp"
